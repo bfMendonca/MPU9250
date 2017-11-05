@@ -16,3 +16,4 @@ I intent do modify this library in order to make it compliant with STM32CubeMX l
 The source code in this repository is licensed under The MIT License (MIT). See LICENSE.txt for details.
 
 Copyright (c) 2017 Brian Chen
+Copyright (c) 2017 Bruno Mendonça

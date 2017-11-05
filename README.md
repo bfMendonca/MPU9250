@@ -1,6 +1,10 @@
 ## Invensense MPU-9250 SPI Library
 
-Library to interface with Invensense MPU-9250 9-DOF IMU using the SPI protocol. Tested on Arduino 1.0.6 and 1.6.3 (but should work with any newer version).
+Library to interface with Invensense MPU-9250 9-DOF IMU using the SPI protocol. 
+
+Forked from Brian Chen.
+
+I intent do modify this library in order to make it compliant with STM32CubeMX library for SPI and, with that, compatible with ST Arm MCU's
 
 *Does not* use the built in DMP of the IMU; only reads raw data.
 

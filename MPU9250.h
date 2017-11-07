@@ -8,7 +8,10 @@
 
 #ifndef MPU9250_h
 #define MPU9250_h
-#include "Arduino.h"
+
+#ifdef __cplusplus
+
+#include "stm32f0xx.h"
 
 // #define AK8963FASTMODE
 
@@ -208,13 +211,15 @@
 
 class MPU9250 {   
 public:
-    // constructor. Default low pass filter of 188Hz
-    MPU9250(long clock, uint8_t cs, uint8_t low_pass_filter = BITS_DLPF_CFG_188HZ, uint8_t low_pass_filter_acc = BITS_DLPF_CFG_188HZ){
-        my_clock = clock;
-        my_cs = cs;
-        my_low_pass_filter = low_pass_filter;
-        my_low_pass_filter_acc = low_pass_filter_acc;
-    }
+
+	//constructor. Default low pass filter of 188Hz
+    MPU9250(SPI_HandleTypeDef *spiDevice,
+    		GPIO_TypeDef *csDevice,
+    		long clock,
+			uint16_t cs,
+    		uint8_t low_pass_filter = BITS_DLPF_CFG_188HZ,
+			uint8_t low_pass_filter_acc = BITS_DLPF_CFG_188HZ);
+
     unsigned int WriteReg(uint8_t WriteAddr, uint8_t WriteData );
     unsigned int ReadReg(uint8_t WriteAddr, uint8_t WriteData );
     void ReadRegs(uint8_t ReadAddr, uint8_t *ReadBuf, unsigned int Bytes );
@@ -250,15 +255,27 @@ public:
     int16_t mag_data_raw[3];    
 
 private:
-    long my_clock;
-    uint8_t my_cs;
-    uint8_t my_low_pass_filter;
-    uint8_t my_low_pass_filter_acc;
+    /*--- Hardware devices. ---*/
+    SPI_HandleTypeDef *m_spi;
+    GPIO_TypeDef *m_csDevice;
+
+    long m_clock;
+    uint16_t m_cs;
+    uint8_t m_low_pass_filter;
+    uint8_t m_low_pass_filter_acc;
 
     //float randomstuffs[3];
 
     float g_bias[3];
     float a_bias[3];      // Bias corrections for gyro and accelerometer
-};
+
+    const static uint32_t SPI_TIMEOUT_MS = 1000;
+    const static size_t SPI_BUFFER_SIZE = 30;
+
+    uint8_t m_spiTxBuffer[ SPI_BUFFER_SIZE ];
+    uint8_t m_spiRxBuffer[ SPI_BUFFER_SIZE ];
  
+};
+
+#endif
 #endif

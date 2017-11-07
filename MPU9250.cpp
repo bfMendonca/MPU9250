@@ -6,33 +6,54 @@
  * Open source under the MIT License. See LICENSE.txt.
  */
 
-#include "SPI.h"
 #include "MPU9250.h"
+
+MPU9250::MPU9250(
+		SPI_HandleTypeDef *spiDevice,
+		GPIO_TypeDef *csDevice,
+		long clock,
+		uint16_t cs,
+		uint8_t low_pass_filter,
+		uint8_t low_pass_filter_acc) :
+	  m_spi( spiDevice )
+	, m_csDevice( csDevice )
+	, m_clock( clock )
+	, m_cs( cs )
+	, m_low_pass_filter( low_pass_filter )
+	, m_low_pass_filter_acc( low_pass_filter_acc ) {
+
+}
 
 unsigned int MPU9250::WriteReg( uint8_t WriteAddr, uint8_t WriteData )
 {
-    unsigned int temp_val;
-
     select();
-    SPI.transfer(WriteAddr);
-    temp_val=SPI.transfer(WriteData);
+
+    m_spiTxBuffer[0] = WriteAddr;
+    m_spiTxBuffer[1] = WriteData;
+    HAL_SPI_TransmitReceive( m_spi, m_spiTxBuffer, m_spiRxBuffer, 2, SPI_TIMEOUT_MS );
+
     deselect();
 
-    //delayMicroseconds(50);
-    return temp_val;
+    return m_spiRxBuffer[0];
 }
+
 unsigned int  MPU9250::ReadReg( uint8_t WriteAddr, uint8_t WriteData )
 {
-    return WriteReg(WriteAddr | READ_FLAG,WriteData);
+	m_spiTxBuffer[0] = WriteAddr | READ_FLAG;
+	m_spiTxBuffer[1] = WriteData;
+	HAL_SPI_TransmitReceive( m_spi, m_spiTxBuffer, m_spiRxBuffer, 2, SPI_TIMEOUT_MS );
+
+    return m_spiRxBuffer[0];
+
 }
 void MPU9250::ReadRegs( uint8_t ReadAddr, uint8_t *ReadBuf, unsigned int Bytes )
 {
-    unsigned int  i = 0;
-
     select();
-    SPI.transfer(ReadAddr | READ_FLAG);
-    for(i = 0; i < Bytes; i++)
-        ReadBuf[i] = SPI.transfer(0x00);
+
+    m_spiTxBuffer[0] = ReadAddr | READ_FLAG;
+    m_spiTxBuffer[1] = 0x00;
+    HAL_SPI_TransmitReceive( m_spi, m_spiTxBuffer, ReadBuf, Bytes, SPI_TIMEOUT_MS );
+
     deselect();
 
     //delayMicroseconds(50);
@@ -56,12 +77,9 @@ void MPU9250::ReadRegs( uint8_t ReadAddr, uint8_t *ReadBuf, unsigned int Bytes )
 #define MPU_InitRegNum 17
 
 bool MPU9250::init(bool calib_gyro, bool calib_acc){
-    pinMode(my_cs, OUTPUT);
-#ifdef CORE_TEENSY
-    digitalWriteFast(my_cs, HIGH);
-#else
-    digitalWrite(my_cs, HIGH);
-#endif
+
+    HAL_GPIO_WritePin( m_csDevice, m_cs, GPIO_PIN_SET );
+
     float temp[3];
 
     if(calib_gyro && calib_acc){
@@ -79,10 +97,10 @@ bool MPU9250::init(bool calib_gyro, bool calib_acc){
         {BIT_H_RESET, MPUREG_PWR_MGMT_1},        // Reset Device
         {0x01, MPUREG_PWR_MGMT_1},               // Clock Source
         {0x00, MPUREG_PWR_MGMT_2},               // Enable Acc & Gyro
-        {my_low_pass_filter, MPUREG_CONFIG},     // Use DLPF set Gyroscope bandwidth 184Hz, temperature bandwidth 188Hz
+        {m_low_pass_filter, MPUREG_CONFIG},     // Use DLPF set Gyroscope bandwidth 184Hz, temperature bandwidth 188Hz
         {BITS_FS_250DPS, MPUREG_GYRO_CONFIG},    // +-250dps
         {BITS_FS_2G, MPUREG_ACCEL_CONFIG},       // +-2G
-        {my_low_pass_filter_acc, MPUREG_ACCEL_CONFIG_2}, // Set Acc Data Rates, Enable Acc LPF , Bandwidth 184Hz
+        {m_low_pass_filter_acc, MPUREG_ACCEL_CONFIG_2}, // Set Acc Data Rates, Enable Acc LPF , Bandwidth 184Hz
         {0x12, MPUREG_INT_PIN_CFG},      //
         //{0x40, MPUREG_I2C_MST_CTRL},   // I2C Speed 348 kHz
         //{0x20, MPUREG_USER_CTRL},      // Enable AUX
@@ -109,7 +127,7 @@ bool MPU9250::init(bool calib_gyro, bool calib_acc){
 
     for(i = 0; i < MPU_InitRegNum; i++) {
         WriteReg(MPU_Init_Data[i][1], MPU_Init_Data[i][0]);
-        delayMicroseconds(1000);  // I2C must slow down the write speed, otherwise it won't work
+        HAL_Delay(1);
     }
 
     set_acc_scale(BITS_FS_2G);
@@ -310,7 +328,9 @@ uint8_t MPU9250::AK8963_whoami(){
     WriteReg(MPUREG_I2C_SLV0_CTRL, 0x81); //Read 1 byte from the magnetometer
 
     //WriteReg(MPUREG_I2C_SLV0_CTRL, 0x81);    //Enable I2C and set bytes
-    delayMicroseconds(100);
+    //delayMicroseconds(100);
+    //TODO: Precisamos de um delay menor
+    HAL_Delay(1);
     response = WriteReg(MPUREG_EXT_SENS_DATA_00|READ_FLAG, 0x00);    //Read I2C 
     //ReadRegs(MPUREG_EXT_SENS_DATA_00,response,1);
     //response=WriteReg(MPUREG_I2C_SLV0_DO, 0x00);    //Read I2C 
@@ -336,13 +356,13 @@ void MPU9250::calib_mag(){
     WriteReg(MPUREG_I2C_SLV0_CTRL, 0x83);                       // Read 3 bytes from the magnetometer
 
     //WriteReg(MPUREG_I2C_SLV0_CTRL, 0x81);                     // Enable I2C and set bytes
-    delayMicroseconds(100000);  
+    HAL_Delay(100);
     //response[0]=WriteReg(MPUREG_EXT_SENS_DATA_01|READ_FLAG, 0x00); //Read I2C 
 
     WriteReg(AK8963_CNTL1, 0x00);                               // set AK8963 to Power Down
-    delayMicroseconds(50000);                                                  // long wait between AK8963 mode changes
+    HAL_Delay(50);
     WriteReg(AK8963_CNTL1, 0x0F);                               // set AK8963 to FUSE ROM access
-    delayMicroseconds(50000);                                                  // long wait between AK8963 mode changes
+    HAL_Delay(50);
 
     ReadRegs(MPUREG_EXT_SENS_DATA_00,response,3);
     //response=WriteReg(MPUREG_I2C_SLV0_DO, 0x00);              // Read I2C 
@@ -351,13 +371,13 @@ void MPU9250::calib_mag(){
         Magnetometer_ASA[i] = ((data-128)/256+1)*Magnetometer_Sensitivity_Scale_Factor;
     }
     WriteReg(AK8963_CNTL1, 0x00); // set AK8963 to Power Down
-    delayMicroseconds(50000);
+    HAL_Delay(50);
     // Configure the magnetometer for continuous read and highest resolution.
     // Set bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL
     // register, and enable continuous mode data acquisition (bits [3:0]),
     // 0010 for 8 Hz and 0110 for 100 Hz sample rates.   
     WriteReg(AK8963_CNTL1, MFS_16BITS << 4 | M_8HZ);            // Set magnetometer data resolution and sample ODR
-    delayMicroseconds(50000);
+    HAL_Delay(50);
 }
 
 void MPU9250::read_mag(){
@@ -432,13 +452,13 @@ void MPU9250::calibrate(float *dest1, float *dest2){
   
     // reset device
     WriteReg(MPUREG_PWR_MGMT_1, 0x80); // Write a one to bit 7 reset bit; toggle reset device
-    delay(100);
+    HAL_Delay(100);
    
     // get stable time source; Auto select clock source to be PLL gyroscope reference if ready 
     // else use the internal oscillator, bits 2:0 = 001
     WriteReg(MPUREG_PWR_MGMT_1, 0x01);  
     WriteReg(MPUREG_PWR_MGMT_2, 0x00);
-    delay(200);                                    
+    HAL_Delay(200);
 
     // Configure device for bias calculation
     WriteReg(MPUREG_INT_ENABLE, 0x00);   // Disable all interrupts
@@ -447,7 +467,7 @@ void MPU9250::calibrate(float *dest1, float *dest2){
     WriteReg(MPUREG_I2C_MST_CTRL, 0x00); // Disable I2C master
     WriteReg(MPUREG_USER_CTRL, 0x00);    // Disable FIFO and I2C master modes
     WriteReg(MPUREG_USER_CTRL, 0x0C);    // Reset FIFO and DMP
-    delay(15);
+    HAL_Delay(15);
   
     // Configure MPU6050 gyro and accelerometer for bias calculation
     WriteReg(MPUREG_CONFIG, 0x01);      // Set low-pass filter to 188 Hz
@@ -461,7 +481,7 @@ void MPU9250::calibrate(float *dest1, float *dest2){
     // Configure FIFO to capture accelerometer and gyro data for bias calculation
     WriteReg(MPUREG_USER_CTRL, 0x40);   // Enable FIFO  
     WriteReg(MPUREG_FIFO_EN, 0x78);     // Enable gyro and accelerometer sensors for FIFO  (max size 512 bytes in MPU-9150)
-    delay(40); // accumulate 40 samples in 40 milliseconds = 480 bytes
+    HAL_Delay(40); // accumulate 40 samples in 40 milliseconds = 480 bytes
 
     // At end of sample accumulation, turn off FIFO sensor read
     WriteReg(MPUREG_FIFO_EN, 0x00);        // Disable gyro and accelerometer sensors for FIFO
@@ -572,19 +592,11 @@ void MPU9250::calibrate(float *dest1, float *dest2){
 
 void MPU9250::select() {
     //Set CS low to start transmission (interrupts conversion)
-    SPI.beginTransaction(SPISettings(my_clock, MSBFIRST, SPI_MODE3));
-#ifdef CORE_TEENSY
-    digitalWriteFast(my_cs, LOW);
-#else
-    digitalWrite(my_cs, LOW);
-#endif
+    //SPI.beginTransaction(SPISettings(my_clock, MSBFIRST, SPI_MODE3));
+
+    HAL_GPIO_WritePin( m_csDevice, m_cs, GPIO_PIN_RESET );
 }
 void MPU9250::deselect() {
     //Set CS high to stop transmission (restarts conversion)
-#ifdef CORE_TEENSY
-    digitalWriteFast(my_cs, HIGH);
-#else
-    digitalWrite(my_cs, HIGH);
-#endif
-    SPI.endTransaction();
+    HAL_GPIO_WritePin( m_csDevice, m_cs, GPIO_PIN_SET );
 }
